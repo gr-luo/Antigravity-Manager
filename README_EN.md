@@ -36,18 +36,28 @@ It not only manages your Gemini / Claude accounts but also provides a **local Op
 > **Looking for the Account Manager Only version?**
 > The v2.0 Account Manager documentation has been moved to [README_v2.md](./README_v2.md).
 
-## ✨ Key Features
+## 🔌 API Proxy: In-Depth
 
-### 🔌 Local API Proxy (New in 2API)
-Turn your browser cookies into a standard OpenAI API!
-- **OpenAI-Compatible**: Provides a `/v1/chat/completions` endpoint.
-- **Multi-Model Support**:
-    - **Gemini**: `gemini-3-pro-high`, `gemini-3-pro-image`, `gemini-2.0-flash-exp`, etc.
-    - **Claude**: `claude-sonnet-4-5`
-- **Auto-Rotation**: Automatically rotates through your added accounts when rate limits are hit.
-- **Image Support**: Full support for vision models (GPT-4o compatible input).
+Antigravity's proxy is not just a forwarder, but a complete **Local AI Scheduler**.
 
-### 🖼️ Capability Showcase
+<div align="center">
+  <img src="docs/images/v3/proxy-settings.png" width="100%" style="border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+</div>
+
+### 1. 🔄 Smart Account Rotation
+When you have multiple accounts:
+- **Load Balancing**: Requests are distributed across healthy accounts.
+- **Auto Failover**: If an account hits `429` (Rate Limit), the system **instantly** switches to the next account and retries.
+- **Quota Awareness**: Exhausted accounts are automatically skipped.
+
+### 2. 🧠 Perfect Context
+Fully compatible with OpenAI's `messages` format. Multi-turn conversations work seamlessly in apps like Cursor, Windsurf, or NextChat.
+
+<div align="center">
+  <img src="docs/images/v3/proxy-chat-demo.png" width="80%" style="border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+</div>
+
+### 3. Connect
 
 <div align="center">
 

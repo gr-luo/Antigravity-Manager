@@ -36,16 +36,32 @@
 > **寻找旧版文档?**
 > v2.0 纯账号管理版本的文档已移动至 [README_v2.md](./README_v2.md)。
 
-## � 核心亮点：API 反代 (API Proxy)
+## 🔌 深度解析：API 反代服务 (API Proxy)
 
-将 Web 账号战力转化为标准 API 生产力！
+Antigravity 的反代服务并非简单的请求转发，而是一个完整的 **本地 AI 调度中心**。
 
-- **OpenAI 协议兼容**: 提供标准的 `/v1/chat/completions` 和 `/v1/models` 接口，无缝对接所有生态应用。
-- **多模型支持**:
-    - **Google**: `gemini-2.0-flash-exp`, `gemini-1.5-pro`
-    - **Claude**: `claude-3-5-sonnet-20241022`
-- **智能轮询 (Auto-Rotation)**: 添加多个账号后，系统会自动在配额耗尽或触发风控时切换到下一个可用账号，实现近乎无限的调用体验。
-- **视觉模型**: 完整支持 GPT-4o 格式的图片输入，自动转换为 Gemini 视觉协议。
+<div align="center">
+  <img src="docs/images/v3/proxy-settings.png" width="100%" style="border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+  <p><i>(极简配置，一键启动)</i></p>
+</div>
+
+### 1. 🔄 智能账号轮询 (Smart Rotation)
+当您添加了多个账号时，反代服务会自动接管调度：
+- **负载均衡**: 自动在可用账号间轮询，避免单账号高频请求。
+- **自动故障转移 (Failover)**: 当某个账号触发 `429 Too Many Requests` 或 `400 Bad Request` 时，系统会 **毫秒级** 自动切换到下一个健康账号重试，用户端几乎无感。
+- **配额感知**: 自动跳过配额耗尽的账号。
+
+### 2. 🧠 完美上下文 (Context)
+完全兼容 OpenAI `messages` 格式，支持多轮对话。无论您使用 NextChat, Chatbox 还是 Cursor，对话历史都能完美保留。
+
+<div align="center">
+  <img src="docs/images/v3/proxy-chat-demo.png" width="80%" style="border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+  <p><i>(多轮对话测试 @ NextChat)</i></p>
+</div>
+
+### 3. 🛡️ 隐私与安全
+- **零日志**: 我们不记录您的任何对话内容。
+- **直连** (可选): 默认通过本地代理直连 Google/Anthropic 服务器，数据不经过任何第三方中转（前提是您的网络环境允许）。
 
 ### 🖼️ 能力展示 (Showcase)
 
