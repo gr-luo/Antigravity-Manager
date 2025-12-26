@@ -126,16 +126,17 @@ impl TokenManager {
     
     /// 获取当前可用的 Token（带 60s 时间窗口锁定机制）
     /// 参数 `_quota_group` 用于区分 "claude" vs "gemini" 组
-    /// 参数 `_session_id` 已废弃，现使用全局时间窗口进行平滑锁定
-    pub async fn get_token(&self, _quota_group: &str, _session_id: Option<&str>) -> Result<(String, String, String), String> {
+    /// 参数 `force_rotate` 为 true 时将忽略锁定，强制切换账号
+    pub async fn get_token(&self, quota_group: &str, force_rotate: bool) -> Result<(String, String, String), String> {
         let total = self.tokens.len();
         if total == 0 {
             return Err("Token pool is empty".to_string());
         }
 
         // 1. 检查时间窗口锁定 (60秒内强制复用上一个账号)
+        // 优化策略: 画图请求 (image_gen) 默认不锁定，以最大化并发能力
         let mut target_token = None;
-        {
+        if !force_rotate && quota_group != "image_gen" {
             let last_used = self.last_used_account.lock().await;
             if let Some((account_id, last_time)) = &*last_used {
                 if last_time.elapsed().as_secs() < 60 {
@@ -147,7 +148,7 @@ impl TokenManager {
             }
         }
 
-        // 2. 如果没有锁定或锁定失效，则进行轮询记录并更新锁定信息
+        // 2. 如果没有锁定、锁定失效或强制轮换，则进行轮询记录并更新锁定信息
         let mut token = if let Some(t) = target_token {
             t
         } else {
@@ -158,11 +159,14 @@ impl TokenManager {
                 .map(|entry| entry.value().clone())
                 .ok_or("Failed to retrieve token from pool")?;
             
-            // 更新最后使用的账号及时间
-            let mut last_used = self.last_used_account.lock().await;
-            *last_used = Some((selected_token.account_id.clone(), std::time::Instant::now()));
+            // 更新最后使用的账号及时间 (如果是普通对话请求)
+            if quota_group != "image_gen" {
+                let mut last_used = self.last_used_account.lock().await;
+                *last_used = Some((selected_token.account_id.clone(), std::time::Instant::now()));
+            }
             
-            tracing::info!("时间窗口过期或新请求，切换到账号: {}", selected_token.email);
+            let action_msg = if force_rotate { "强制切换" } else { "切换" };
+            tracing::info!("{}到账号: {}", action_msg, selected_token.email);
             selected_token
         };
         

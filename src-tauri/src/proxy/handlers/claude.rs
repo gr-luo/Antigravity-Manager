@@ -91,9 +91,17 @@ pub async fn handle_messages(
     let mut retried_without_thinking = false;
     
     for attempt in 0..max_attempts {
-        // 4. 获取 Token (使用内置的时间窗口锁定机制)
-        let model_group = crate::proxy::common::utils::infer_quota_group(&request_for_body.model);
-        let (access_token, project_id, email) = match token_manager.get_token(&model_group, session_id).await {
+        // 3. 模型路由与配置解析 (提前解析以确定请求类型)
+        let mut mapped_model = crate::proxy::common::model_mapping::resolve_model_route(
+            &request_for_body.model,
+            &*state.custom_mapping.read().await,
+            &*state.openai_mapping.read().await,
+            &*state.anthropic_mapping.read().await,
+        );
+        let config = crate::proxy::mappers::common_utils::resolve_request_config(&request_for_body.model, &mapped_model);
+
+        // 4. 获取 Token (使用准确的 request_type)
+        let (access_token, project_id, email) = match token_manager.get_token(&config.request_type, false).await {
             Ok(t) => t,
             Err(e) => {
                  return (
@@ -109,17 +117,8 @@ pub async fn handle_messages(
             }
         };
 
-        tracing::info!("Using account: {} for request", email);
+        tracing::info!("Using account: {} for request (type: {})", email, config.request_type);
         
-        // 5. 构建请求体
-        let mut mapped_model = crate::proxy::common::model_mapping::resolve_model_route(
-            &request_for_body.model,
-            &*state.custom_mapping.read().await,
-            &*state.openai_mapping.read().await,
-            &*state.anthropic_mapping.read().await,
-        );
-
-        // --- 核心优化：智能识别并拦截后台自动请求 ---
         // --- 核心优化：智能识别与拦截后台自动请求 ---
         // 关键词识别：标题生成、摘要提取、下一步提示建议等
         // [Optimization] 使用更长的预览窗口 (500 chars) 以捕获更具体的意图

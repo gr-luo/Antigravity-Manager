@@ -27,27 +27,29 @@ pub async fn handle_chat_completions(
     let mut last_error = String::new();
  
     for attempt in 0..max_attempts {
-        // 2. 获取 Token
-        let model_group = crate::proxy::common::utils::infer_quota_group(&openai_req.model);
-        let (access_token, project_id, email) = match token_manager.get_token(&model_group, None).await {
-            Ok(t) => t,
-            Err(e) => {
-                return Err((StatusCode::SERVICE_UNAVAILABLE, format!("Token error: {}", e)));
-            }
-        };
-
-        tracing::info!("Using account: {} for request", email);
-
-        // 3. 转换请求
+        // 2. 预解析模型路由与配置
         let mapped_model = crate::proxy::common::model_mapping::resolve_model_route(
             &openai_req.model,
             &*state.custom_mapping.read().await,
             &*state.openai_mapping.read().await,
             &*state.anthropic_mapping.read().await,
         );
+        let config = crate::proxy::mappers::common_utils::resolve_request_config(&openai_req.model, &mapped_model);
+
+        // 3. 获取 Token (使用准确的 request_type)
+        let (access_token, project_id, email) = match token_manager.get_token(&config.request_type, false).await {
+            Ok(t) => t,
+            Err(e) => {
+                return Err((StatusCode::SERVICE_UNAVAILABLE, format!("Token error: {}", e)));
+            }
+        };
+
+        tracing::info!("Using account: {} for request (type: {})", email, config.request_type);
+
+        // 4. 转换请求
         let gemini_body = transform_openai_request(&openai_req, &project_id, &mapped_model);
 
-        // 4. 发送请求
+        // 5. 发送请求
         let list_response = openai_req.stream;
         let method = if list_response { "streamGenerateContent" } else { "generateContent" };
         let query_string = if list_response { Some("alt=sse") } else { None };
@@ -99,14 +101,34 @@ pub async fn handle_chat_completions(
         let error_text = response.text().await.unwrap_or_default();
         last_error = format!("HTTP {}: {}", status_code, error_text);
  
-        // 只有 429 (限流), 403 (权限/地区限制) 和 401 (认证失效) 触发账号轮换
-        if status_code == 429 || status_code == 403 || status_code == 401 {
-            // 如果是 429 且标记为配额耗尽，直接报错，避免穿透整个账号池
-            if status_code == 429 && (error_text.contains("QUOTA_EXHAUSTED") || error_text.contains("quota")) {
+        // 429 智能处理
+        if status_code == 429 {
+            // 1. 优先尝试解析 RetryInfo (由 Google Cloud 直接下发)
+            if let Some(delay_ms) = crate::proxy::upstream::retry::parse_retry_delay(&error_text) {
+                let actual_delay = delay_ms.saturating_add(200).min(10_000);
+                tracing::warn!(
+                    "OpenAI Upstream 429 on attempt {}/{}, waiting {}ms then retrying",
+                    attempt + 1,
+                    max_attempts,
+                    actual_delay
+                );
+                tokio::time::sleep(tokio::time::Duration::from_millis(actual_delay)).await;
+                continue;
+            }
+
+            // 2. 只有明确包含 "QUOTA_EXHAUSTED" 才停止，避免误判频率提示 (如 "check quota")
+            if error_text.contains("QUOTA_EXHAUSTED") {
                 error!("OpenAI Quota exhausted (429) on attempt {}/{}, stopping to protect pool.", attempt + 1, max_attempts);
                 return Err((status, error_text));
             }
 
+            // 3. 其他 429 情况（如无重试指示的频率限制），轮换账号
+            tracing::warn!("OpenAI Upstream 429 on attempt {}/{}, rotating account", attempt + 1, max_attempts);
+            continue;
+        }
+
+        // 只有 403 (权限/地区限制) 和 401 (认证失效) 触发账号轮换
+        if status_code == 403 || status_code == 401 {
             tracing::warn!("OpenAI Upstream {} on attempt {}/{}, rotating account", status_code, attempt + 1, max_attempts);
             continue;
         }
